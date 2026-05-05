@@ -198,7 +198,7 @@ onUnmounted(() => {
       description="开始测试以查看实时指标"
     >
       <el-button type="primary" :icon="VideoPlay" @click="startTest">
-        Start Test
+        开始测试
       </el-button>
     </el-empty>
 
