@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, VideoPlay, VideoPause, Edit, Delete } from '@element-plus/icons-vue'
+import { Plus, VideoPlay, VideoPause, Edit, Delete, CopyDocument } from '@element-plus/icons-vue'
 import TaskForm from '@/components/TaskForm.vue'
 import type { Task } from '@/types'
-import { api } from '@/api/client'
+import { api, withErrorHandling } from '@/api/client'
 
 const tasks = ref<Task[]>([])
 const loading = ref(false)
@@ -98,6 +98,18 @@ async function handleDelete(task: Task) {
   }
 }
 
+async function handleDuplicate(task: Task) {
+  if (!task.id) return
+  try {
+    await api.duplicateTask(task.id)
+    ElMessage.success('任务已复制')
+    await fetchTasks()
+  } catch (error) {
+    ElMessage.error('复制任务失败')
+    console.error(error)
+  }
+}
+
 function getStatusType(status?: string) {
   switch (status) {
     case 'running':
@@ -166,7 +178,7 @@ onMounted(() => {
         </template>
       </el-table-column>
 
-      <el-table-column label="操作" width="240" align="center" fixed="right">
+      <el-table-column label="操作" width="280" align="center" fixed="right">
         <template #default="{ row }">
           <el-button-group>
             <el-button
@@ -195,6 +207,15 @@ onMounted(() => {
               :disabled="row.status === 'running'"
             >
               编辑
+            </el-button>
+            <el-button
+              size="small"
+              type="info"
+              :icon="CopyDocument"
+              @click="handleDuplicate(row)"
+              :disabled="row.status === 'running'"
+            >
+              复制
             </el-button>
             <el-button
               size="small"

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, watch, computed } from 'vue'
 import type { FormInstance, FormRules } from 'element-plus'
+import { Plus, Delete } from '@element-plus/icons-vue'
 import type { Task } from '@/types'
 
 const props = defineProps<{
@@ -31,6 +32,9 @@ const formData = ref<Partial<Task>>({
   concurrency: 10,
   duration: 60
 })
+
+// Headers 编辑
+const headerList = ref<Array<{ key: string; value: string }>>([])
 
 const rules: FormRules = {
   name: [
@@ -64,6 +68,8 @@ const dialogTitle = computed(() => isEdit.value ? '编辑任务' : '新建任务
 watch(() => props.task, (newTask) => {
   if (newTask) {
     formData.value = { ...newTask }
+    // 转换 headers 到列表格式
+    headerList.value = Object.entries(newTask.headers || {}).map(([key, value]) => ({ key, value }))
   } else {
     resetForm()
   }
@@ -82,7 +88,26 @@ function resetForm() {
     concurrency: 10,
     duration: 60
   }
+  headerList.value = []
   formRef.value?.resetFields()
+}
+
+function addHeader() {
+  headerList.value.push({ key: '', value: '' })
+}
+
+function removeHeader(index: number) {
+  headerList.value.splice(index, 1)
+}
+
+function headersToObject(): Record<string, string> {
+  const headers: Record<string, string> = {}
+  for (const h of headerList.value) {
+    if (h.key.trim()) {
+      headers[h.key.trim()] = h.value
+    }
+  }
+  return headers
 }
 
 async function handleSubmit() {
@@ -90,7 +115,8 @@ async function handleSubmit() {
 
   try {
     await formRef.value.validate()
-    emit('submit', { ...formData.value })
+    const data = { ...formData.value, headers: headersToObject() }
+    emit('submit', data)
     dialogVisible.value = false
     resetForm()
   } catch (error) {
@@ -108,7 +134,7 @@ function handleCancel() {
   <el-dialog
     v-model="dialogVisible"
     :title="dialogTitle"
-    width="600px"
+    width="650px"
     :close-on-click-modal="false"
   >
     <el-form
@@ -135,6 +161,19 @@ function handleCancel() {
             :value="method"
           />
         </el-select>
+      </el-form-item>
+
+      <el-form-item label="请求头">
+        <div class="headers-editor">
+          <div v-for="(header, index) in headerList" :key="index" class="header-row">
+            <el-input v-model="header.key" placeholder="Header Name" class="header-key" />
+            <el-input v-model="header.value" placeholder="Header Value" class="header-value" />
+            <el-button type="danger" :icon="Delete" circle size="small" @click="removeHeader(index)" />
+          </div>
+          <el-button type="primary" :icon="Plus" size="small" @click="addHeader">
+            添加请求头
+          </el-button>
+        </div>
       </el-form-item>
 
       <el-form-item label="并发数" prop="concurrency">
@@ -196,6 +235,24 @@ function handleCancel() {
 </template>
 
 <style scoped>
+.headers-editor {
+  width: 100%;
+}
+
+.header-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.header-key {
+  width: 150px;
+}
+
+.header-value {
+  flex: 1;
+}
+
 .el-form-item__tip {
   font-size: 12px;
   color: var(--el-text-color-secondary);

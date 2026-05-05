@@ -10,6 +10,8 @@ import (
 	"stress-test/pkg/models"
 )
 
+const bufferSize = 10000
+
 // StatsCollector 统计收集器
 type StatsCollector struct {
 	mu            sync.RWMutex
@@ -21,14 +23,20 @@ type StatsCollector struct {
 	count         int // current number of elements in buffer
 	errors        map[string]int64
 	startTime     time.Time
+
+	// 增量统计（避免每次快照都排序）
+	lastSnapshotTime time.Time
+	lastTotal        int64
+	latencySum       int64 // 用于增量计算平均值
 }
 
 // NewStatsCollector 创建统计收集器
 func NewStatsCollector() *StatsCollector {
 	return &StatsCollector{
-		latencies: make([]int64, 10000), // fixed-size ring buffer
-		errors:    make(map[string]int64),
-		startTime: time.Now(),
+		latencies:        make([]int64, bufferSize),
+		errors:           make(map[string]int64),
+		startTime:        time.Now(),
+		lastSnapshotTime: time.Now(),
 	}
 }
 
@@ -43,6 +51,7 @@ func (c *StatsCollector) Record(result *engine.Result) {
 
 	c.totalRequests++
 	latencyMs := result.Latency.Milliseconds()
+	c.latencySum += latencyMs
 
 	if result.Success {
 		c.successCount++
@@ -59,8 +68,8 @@ func (c *StatsCollector) Record(result *engine.Result) {
 
 	// Use ring buffer with modular indexing
 	c.latencies[c.writeIndex] = latencyMs
-	c.writeIndex = (c.writeIndex + 1) % 10000
-	if c.count < 10000 {
+	c.writeIndex = (c.writeIndex + 1) % bufferSize
+	if c.count < bufferSize {
 		c.count++
 	}
 }
@@ -92,18 +101,16 @@ func (c *StatsCollector) Snapshot() *models.RealtimeStats {
 
 	// 计算延迟统计
 	if c.count > 0 {
+		// 计算平均值（使用累积总和，避免遍历）
+		stats.AvgRT = c.latencySum / int64(c.count)
+
+		// 只在需要时排序计算百分位
 		sorted := make([]int64, c.count)
 		copy(sorted, c.latencies[:c.count])
 		sort.Slice(sorted, func(i, j int) bool { return sorted[i] < sorted[j] })
 
 		stats.MinRT = sorted[0]
 		stats.MaxRT = sorted[len(sorted)-1]
-		// Calculate average from sorted slice (not latencySum which is now removed)
-		var sum int64
-		for _, v := range sorted {
-			sum += v
-		}
-		stats.AvgRT = sum / int64(len(sorted))
 		stats.P50 = sorted[len(sorted)*50/100]
 		stats.P90 = sorted[len(sorted)*90/100]
 		stats.P95 = sorted[len(sorted)*95/100]
@@ -121,11 +128,14 @@ func (c *StatsCollector) Reset() {
 	c.totalRequests = 0
 	c.successCount = 0
 	c.failedCount = 0
-	c.latencies = make([]int64, 10000) // reset to fixed size
+	c.latencies = make([]int64, bufferSize)
 	c.writeIndex = 0
 	c.count = 0
 	c.errors = make(map[string]int64)
+	c.latencySum = 0
 	c.startTime = time.Now()
+	c.lastSnapshotTime = time.Now()
+	c.lastTotal = 0
 }
 
 // classifyError 分类错误

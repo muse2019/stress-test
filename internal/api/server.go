@@ -59,14 +59,19 @@ func (s *Server) setupRoutes() {
 	// 应用 CORS 中间件
 	s.router.Use(corsMiddleware)
 
+	// 健康检查
+	s.router.HandleFunc("/health", s.handler.HealthCheck).Methods("GET")
+
 	api := s.router.PathPrefix("/api").Subrouter()
 
 	// 任务管理
 	api.HandleFunc("/tasks", s.handler.ListTasks).Methods("GET")
 	api.HandleFunc("/tasks", s.handler.CreateTask).Methods("POST")
+	api.HandleFunc("/tasks", s.handler.DeleteAllTasks).Methods("DELETE")
 	api.HandleFunc("/tasks/{id}", s.handler.GetTask).Methods("GET")
 	api.HandleFunc("/tasks/{id}", s.handler.UpdateTask).Methods("PUT")
 	api.HandleFunc("/tasks/{id}", s.handler.DeleteTask).Methods("DELETE")
+	api.HandleFunc("/tasks/{id}/duplicate", s.handler.DuplicateTask).Methods("POST")
 
 	// 压测控制
 	api.HandleFunc("/tasks/{id}/start", s.handler.StartTask).Methods("POST")
@@ -77,6 +82,7 @@ func (s *Server) setupRoutes() {
 	api.HandleFunc("/reports", s.handler.ListReports).Methods("GET")
 	api.HandleFunc("/reports/{id}", s.handler.GetReport).Methods("GET")
 	api.HandleFunc("/reports/{id}/download", s.handler.DownloadReport).Methods("GET")
+	api.HandleFunc("/reports/{id}", s.handler.DeleteReport).Methods("DELETE")
 
 	// WebSocket 实时推送
 	api.HandleFunc("/ws/stats/{id}", s.handler.wsHub.HandleWebSocket).Methods("GET")

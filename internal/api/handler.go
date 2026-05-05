@@ -13,6 +13,24 @@ import (
 	"stress-test/pkg/models"
 )
 
+// APIError 统一错误响应
+type APIError struct {
+	Error   string `json:"error"`
+	Code    int    `json:"code"`
+	Message string `json:"message,omitempty"`
+}
+
+// writeError 写入错误响应
+func writeError(w http.ResponseWriter, message string, code int) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
+	json.NewEncoder(w).Encode(APIError{
+		Error:   message,
+		Code:    code,
+		Message: message,
+	})
+}
+
 // Handler API 处理器
 type Handler struct {
 	taskStore   store.TaskStore
@@ -343,11 +361,86 @@ func (h *Handler) GetTaskStats(w http.ResponseWriter, r *http.Request) {
 	h.mu.RUnlock()
 
 	if !ok {
-		http.Error(w, "task not running", http.StatusNotFound)
+		writeError(w, "task not running", http.StatusNotFound)
 		return
 	}
 
 	stats := s.GetStats()
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(stats)
+}
+
+// HealthCheck 健康检查
+func (h *Handler) HealthCheck(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":    "ok",
+		"timestamp": time.Now().Unix(),
+	})
+}
+
+// DeleteReport 删除报告
+func (h *Handler) DeleteReport(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	id := vars["id"]
+
+	if err := h.reportStore.Delete(id); err != nil {
+		writeError(w, "failed to delete report", http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// DuplicateTask 复制任务
+func (h *Handler) DuplicateTask(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	id := vars["id"]
+
+	existing, err := h.taskStore.Get(id)
+	if err != nil {
+		writeError(w, "task not found", http.StatusNotFound)
+		return
+	}
+
+	// 创建副本
+	newTask := *existing
+	newTask.ID = ""
+	newTask.Name = existing.Name + " (副本)"
+	newTask.GenerateID()
+
+	if err := h.taskStore.Save(&newTask); err != nil {
+		writeError(w, "failed to duplicate task", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(newTask)
+}
+
+// DeleteAllTasks 删除所有任务
+func (h *Handler) DeleteAllTasks(w http.ResponseWriter, r *http.Request) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	// 检查是否有运行中的任务
+	for _, s := range h.schedulers {
+		if s.IsRunning() {
+			writeError(w, "cannot delete tasks while one is running", http.StatusConflict)
+			return
+		}
+	}
+
+	tasks, err := h.taskStore.List()
+	if err != nil {
+		writeError(w, "failed to list tasks", http.StatusInternalServerError)
+		return
+	}
+
+	for _, t := range tasks {
+		h.taskStore.Delete(t.ID)
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }
