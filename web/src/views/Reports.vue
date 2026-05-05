@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import {
   ElTable,
   ElTableColumn,
@@ -10,17 +10,25 @@ import {
   ElTag,
   ElMessage,
   ElEmpty,
+  ElCheckbox,
 } from 'element-plus'
-import { Download, View, Document, Timer, Connection } from '@element-plus/icons-vue'
+import { Download, View, Document, Timer, Connection, Sort } from '@element-plus/icons-vue'
 import { api } from '@/api/client'
 import StatsChart from '@/components/StatsChart.vue'
-import type { Report, ReportSummary, RealtimeStats } from '@/types'
+import type { Report, ReportSummary, RealtimeStats, ReportComparison } from '@/types'
 
 const reports = ref<ReportSummary[]>([])
 const loading = ref(false)
 const detailDialogVisible = ref(false)
 const selectedReport = ref<Report | null>(null)
 const detailLoading = ref(false)
+
+// 报告对比
+const compareMode = ref(false)
+const selectedReportIds = ref<string[]>([])
+const compareDialogVisible = ref(false)
+const comparison = ref<ReportComparison | null>(null)
+const compareLoading = ref(false)
 
 // Fetch reports list
 const fetchReports = async () => {
@@ -112,6 +120,67 @@ const formatStats = (stats: RealtimeStats) => {
   }
 }
 
+// Toggle compare mode
+const toggleCompareMode = () => {
+  compareMode.value = !compareMode.value
+  if (!compareMode.value) {
+    selectedReportIds.value = []
+  }
+}
+
+// Handle selection change
+const handleSelectionChange = (selection: ReportSummary[]) => {
+  if (selection.length > 2) {
+    ElMessage.warning('最多只能选择两个报告进行对比')
+    return
+  }
+  selectedReportIds.value = selection.map(r => r.id)
+}
+
+// Compare selected reports
+const compareSelectedReports = async () => {
+  if (selectedReportIds.value.length !== 2) {
+    ElMessage.warning('请选择两个报告进行对比')
+    return
+  }
+
+  compareDialogVisible.value = true
+  compareLoading.value = true
+  comparison.value = null
+
+  try {
+    comparison.value = await api.compareReports(selectedReportIds.value[0], selectedReportIds.value[1])
+  } catch (error) {
+    ElMessage.error('对比报告失败')
+    console.error(error)
+    compareDialogVisible.value = false
+  } finally {
+    compareLoading.value = false
+  }
+}
+
+// Format diff value
+const formatDiff = (value: number, unit: string = ''): string => {
+  const prefix = value >= 0 ? '+' : ''
+  return `${prefix}${value.toFixed(2)}${unit}`
+}
+
+// Get diff class
+const getDiffClass = (value: number): string => {
+  if (value > 0) return 'diff-positive'
+  if (value < 0) return 'diff-negative'
+  return 'diff-neutral'
+}
+
+// Get avgRT diff class (lower is better)
+const getAvgRTDiffClass = (value: number): string => {
+  if (value < 0) return 'diff-positive'
+  if (value > 0) return 'diff-negative'
+  return 'diff-neutral'
+}
+
+const canCompare = computed(() => selectedReportIds.value.length === 2)
+
 onMounted(() => {
   fetchReports()
 })
@@ -124,9 +193,26 @@ onMounted(() => {
         <el-icon><Document /></el-icon>
         历史报告
       </h2>
-      <el-button @click="fetchReports" :loading="loading">
-        刷新
-      </el-button>
+      <div class="header-actions">
+        <el-button
+          :type="compareMode ? 'primary' : 'default'"
+          :icon="Sort"
+          @click="toggleCompareMode"
+        >
+          {{ compareMode ? '取消对比' : '报告对比' }}
+        </el-button>
+        <el-button
+          v-if="compareMode"
+          type="success"
+          :disabled="!canCompare"
+          @click="compareSelectedReports"
+        >
+          对比选中报告 ({{ selectedReportIds.length }}/2)
+        </el-button>
+        <el-button @click="fetchReports" :loading="loading">
+          刷新
+        </el-button>
+      </div>
     </div>
 
     <el-table
@@ -135,7 +221,15 @@ onMounted(() => {
       stripe
       style="width: 100%"
       empty-text="暂无报告"
+      @selection-change="handleSelectionChange"
     >
+      <el-table-column
+        v-if="compareMode"
+        type="selection"
+        width="55"
+        :selectable="() => selectedReportIds.length < 2 || selectedReportIds.includes(reports.find(r => r.id === selectedReportIds[0])?.id || '')"
+      />
+
       <el-table-column
         prop="taskName"
         label="任务名称"
@@ -357,6 +451,67 @@ onMounted(() => {
         <el-empty v-else-if="!detailLoading" description="暂无报告数据" />
       </div>
     </el-dialog>
+
+    <!-- Compare Dialog -->
+    <el-dialog
+      v-model="compareDialogVisible"
+      title="报告对比"
+      width="90%"
+      top="5vh"
+      destroy-on-close
+    >
+      <div v-loading="compareLoading" class="compare-content">
+        <template v-if="comparison">
+          <div class="compare-header">
+            <div class="compare-report">
+              <h4>报告 1</h4>
+              <div>{{ comparison.report1.taskName }}</div>
+              <div class="compare-time">{{ formatDateTime(comparison.report1.startTime) }}</div>
+            </div>
+            <div class="compare-arrow">→</div>
+            <div class="compare-report">
+              <h4>报告 2</h4>
+              <div>{{ comparison.report2.taskName }}</div>
+              <div class="compare-time">{{ formatDateTime(comparison.report2.startTime) }}</div>
+            </div>
+          </div>
+
+          <el-table :data="[
+            { label: '总请求数', v1: comparison.report1.finalStats.totalRequests, v2: comparison.report2.finalStats.totalRequests, diff: comparison.diff.totalRequests, unit: '' },
+            { label: '成功率', v1: comparison.report1.finalStats.successRate(), v2: comparison.report2.finalStats.successRate(), diff: comparison.diff.successRate, unit: '%' },
+            { label: 'QPS', v1: comparison.report1.finalStats.qps, v2: comparison.report2.finalStats.qps, diff: comparison.diff.qps, unit: '' },
+            { label: '平均响应时间', v1: comparison.report1.finalStats.avgRT, v2: comparison.report2.finalStats.avgRT, diff: comparison.diff.avgRT, unit: 'ms' },
+            { label: 'P50', v1: comparison.report1.finalStats.p50, v2: comparison.report2.finalStats.p50, diff: comparison.diff.p50, unit: 'ms' },
+            { label: 'P90', v1: comparison.report1.finalStats.p90, v2: comparison.report2.finalStats.p90, diff: comparison.diff.p90, unit: 'ms' },
+            { label: 'P95', v1: comparison.report1.finalStats.p95, v2: comparison.report2.finalStats.p95, diff: comparison.diff.p95, unit: 'ms' },
+            { label: 'P99', v1: comparison.report1.finalStats.p99, v2: comparison.report2.finalStats.p99, diff: comparison.diff.p99, unit: 'ms' },
+          ]" stripe>
+            <el-table-column prop="label" label="指标" width="150" />
+            <el-table-column label="报告 1" width="150">
+              <template #default="{ row }">
+                {{ row.v1.toFixed(2) }}{{ row.unit }}
+              </template>
+            </el-table-column>
+            <el-table-column label="报告 2" width="150">
+              <template #default="{ row }">
+                {{ row.v2.toFixed(2) }}{{ row.unit }}
+              </template>
+            </el-table-column>
+            <el-table-column label="差异">
+              <template #default="{ row }">
+                <span :class="row.label.includes('响应时间') || row.label.startsWith('P') ? getAvgRTDiffClass(row.diff) : getDiffClass(row.diff)">
+                  {{ formatDiff(row.diff, row.unit) }}
+                </span>
+              </template>
+            </el-table-column>
+          </el-table>
+
+          <div class="compare-tip">
+            <p>绿色表示改善，红色表示下降（响应时间相反：减少为绿色，增加为红色）</p>
+          </div>
+        </template>
+      </div>
+    </el-dialog>
   </div>
 </template>
 
@@ -379,6 +534,11 @@ onMounted(() => {
   margin: 0;
   font-size: 20px;
   color: #303133;
+}
+
+.header-actions {
+  display: flex;
+  gap: 12px;
 }
 
 .task-name {
@@ -431,5 +591,62 @@ onMounted(() => {
 :deep(.el-descriptions__title) {
   font-size: 16px;
   color: #303133;
+}
+
+/* Compare styles */
+.compare-content {
+  min-height: 200px;
+}
+
+.compare-header {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 40px;
+  margin-bottom: 24px;
+  padding: 20px;
+  background: #f5f7fa;
+  border-radius: 8px;
+}
+
+.compare-report {
+  text-align: center;
+}
+
+.compare-report h4 {
+  margin: 0 0 8px 0;
+  color: #303133;
+}
+
+.compare-time {
+  font-size: 12px;
+  color: #909399;
+  margin-top: 4px;
+}
+
+.compare-arrow {
+  font-size: 24px;
+  color: #909399;
+}
+
+.diff-positive {
+  color: #67c23a;
+  font-weight: 500;
+}
+
+.diff-negative {
+  color: #f56c6c;
+  font-weight: 500;
+}
+
+.diff-neutral {
+  color: #909399;
+}
+
+.compare-tip {
+  margin-top: 16px;
+  text-align: center;
+  color: #909399;
+  font-size: 12px;
 }
 </style>

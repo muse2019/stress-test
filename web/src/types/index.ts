@@ -10,8 +10,55 @@ export interface Task {
   mode: 'fixed' | 'staircase' | 'rate'
   concurrency: number
   duration: number
+  thinkTime: number
   rate?: number
+  staircase?: Staircase
+  warmup?: Warmup
+  retry?: RetryConfig
+  variables?: Variable[]
+  assertions?: Assertion[]
+  schedule?: Schedule
   status?: 'idle' | 'running'
+}
+
+export interface Staircase {
+  start: number
+  step: number
+  stepTime: number
+  max: number
+}
+
+export interface Warmup {
+  duration: number
+  concurrency: number
+}
+
+export interface RetryConfig {
+  count: number
+  delay: number
+}
+
+export interface Variable {
+  name: string
+  type: 'static' | 'random_int' | 'random_string' | 'uuid' | 'csv'
+  value?: string
+  min?: number
+  max?: number
+  file?: string
+  column?: string
+}
+
+export interface Assertion {
+  type: 'statusCode' | 'responseTime' | 'body'
+  operator: 'eq' | 'ne' | 'lt' | 'gt' | 'lte' | 'gte' | 'contains' | 'regex'
+  expected: string | number
+}
+
+export interface Schedule {
+  enabled: boolean
+  cron: string
+  nextRun?: string
+  lastRun?: string
 }
 
 export interface RealtimeStats {
@@ -51,7 +98,22 @@ export interface Report {
   timeline: RealtimeStats[]
 }
 
+export interface ReportComparison {
+  report1: Report
+  report2: Report
+  diff: {
+    totalRequests: number
+    successRate: number
+    qps: number
+    avgRT: number
+    p50: number
+    p90: number
+    p95: number
+    p99: number
+  }
+}
+
 export interface WSMessage {
-  type: 'connected' | 'started' | 'stats' | 'completed' | 'error'
+  type: 'connected' | 'started' | 'stats' | 'completed' | 'error' | 'warmup_stats'
   data: any
 }

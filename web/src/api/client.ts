@@ -1,5 +1,5 @@
 import { ElMessage } from 'element-plus'
-import type { Task, Report, ReportSummary, RealtimeStats, WSMessage } from '@/types'
+import type { Task, Report, ReportSummary, RealtimeStats, WSMessage, ReportComparison } from '@/types'
 
 const API_BASE = '/api'
 
@@ -113,6 +113,10 @@ class APIClient {
 
   async downloadReport(id: string): Promise<void> {
     window.open(`${API_BASE}/reports/${id}/download`, '_blank')
+  }
+
+  async compareReports(id1: string, id2: string): Promise<ReportComparison> {
+    return request<ReportComparison>(`${API_BASE}/reports/compare/${id1}/${id2}`)
   }
 
   // Health check

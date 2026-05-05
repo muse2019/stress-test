@@ -83,6 +83,7 @@ func (s *Server) setupRoutes() {
 	api.HandleFunc("/reports/{id}", s.handler.GetReport).Methods("GET")
 	api.HandleFunc("/reports/{id}/download", s.handler.DownloadReport).Methods("GET")
 	api.HandleFunc("/reports/{id}", s.handler.DeleteReport).Methods("DELETE")
+	api.HandleFunc("/reports/compare/{id1}/{id2}", s.handler.CompareReports).Methods("GET")
 
 	// WebSocket 实时推送
 	api.HandleFunc("/ws/stats/{id}", s.handler.wsHub.HandleWebSocket).Methods("GET")

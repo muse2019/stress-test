@@ -444,3 +444,41 @@ func (h *Handler) DeleteAllTasks(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusNoContent)
 }
+
+// CompareReports 对比报告
+func (h *Handler) CompareReports(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	id1 := vars["id1"]
+	id2 := vars["id2"]
+
+	report1, err := h.reportStore.Get(id1)
+	if err != nil {
+		writeError(w, "report 1 not found", http.StatusNotFound)
+		return
+	}
+
+	report2, err := h.reportStore.Get(id2)
+	if err != nil {
+		writeError(w, "report 2 not found", http.StatusNotFound)
+		return
+	}
+
+	// 计算对比数据
+	comparison := map[string]interface{}{
+		"report1": report1,
+		"report2": report2,
+		"diff": map[string]interface{}{
+			"totalRequests": report2.FinalStats.TotalRequests - report1.FinalStats.TotalRequests,
+			"successRate":   report2.FinalStats.SuccessRate() - report1.FinalStats.SuccessRate(),
+			"qps":           report2.FinalStats.QPS - report1.FinalStats.QPS,
+			"avgRT":         report2.FinalStats.AvgRT - report1.FinalStats.AvgRT,
+			"p50":           report2.FinalStats.P50 - report1.FinalStats.P50,
+			"p90":           report2.FinalStats.P90 - report1.FinalStats.P90,
+			"p95":           report2.FinalStats.P95 - report1.FinalStats.P95,
+			"p99":           report2.FinalStats.P99 - report1.FinalStats.P99,
+		},
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(comparison)
+}
