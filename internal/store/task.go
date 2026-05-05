@@ -37,6 +37,8 @@ func validateID(id string) error {
 // TaskStore 任务存储接口
 type TaskStore interface {
 	List() ([]*models.Task, error)
+	ListByGroup(group string) ([]*models.Task, error)
+	GetGroups() ([]string, error)
 	Get(id string) (*models.Task, error)
 	Save(task *models.Task) error
 	Delete(id string) error
@@ -80,6 +82,45 @@ func (s *JSONTaskStore) List() ([]*models.Task, error) {
 	}
 
 	return tasks, nil
+}
+
+// ListByGroup 按分组获取任务
+func (s *JSONTaskStore) ListByGroup(group string) ([]*models.Task, error) {
+	tasks, err := s.List()
+	if err != nil {
+		return nil, err
+	}
+
+	var filtered []*models.Task
+	for _, task := range tasks {
+		if task.Group == group {
+			filtered = append(filtered, task)
+		}
+	}
+
+	return filtered, nil
+}
+
+// GetGroups 获取所有分组
+func (s *JSONTaskStore) GetGroups() ([]string, error) {
+	tasks, err := s.List()
+	if err != nil {
+		return nil, err
+	}
+
+	groupSet := make(map[string]bool)
+	for _, task := range tasks {
+		if task.Group != "" {
+			groupSet[task.Group] = true
+		}
+	}
+
+	groups := make([]string, 0, len(groupSet))
+	for group := range groupSet {
+		groups = append(groups, group)
+	}
+
+	return groups, nil
 }
 
 // Get 获取单个任务

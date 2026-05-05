@@ -50,9 +50,15 @@ class APIClient {
   private wsReconnectDelay = 2000
 
   // Task APIs
-  async listTasks(): Promise<Task[]> {
-    const data = await request<{ tasks: Task[] }>(`${API_BASE}/tasks`)
+  async listTasks(group?: string): Promise<Task[]> {
+    const url = group ? `${API_BASE}/tasks?group=${encodeURIComponent(group)}` : `${API_BASE}/tasks`
+    const data = await request<{ tasks: Task[] }>(url)
     return data.tasks || []
+  }
+
+  async getGroups(): Promise<string[]> {
+    const data = await request<{ groups: string[] }>(`${API_BASE}/tasks/groups`)
+    return data.groups || []
   }
 
   async createTask(task: Partial<Task>): Promise<Task> {

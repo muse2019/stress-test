@@ -52,7 +52,18 @@ func NewHandler(taskStore store.TaskStore, reportStore store.ReportStore, wsHub 
 
 // ListTasks 获取任务列表
 func (h *Handler) ListTasks(w http.ResponseWriter, r *http.Request) {
-	tasks, err := h.taskStore.List()
+	// 支持按分组筛选
+	group := r.URL.Query().Get("group")
+
+	var tasks []*models.Task
+	var err error
+
+	if group != "" {
+		tasks, err = h.taskStore.ListByGroup(group)
+	} else {
+		tasks, err = h.taskStore.List()
+	}
+
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -78,6 +89,18 @@ func (h *Handler) ListTasks(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{"tasks": result})
+}
+
+// GetGroups 获取所有分组
+func (h *Handler) GetGroups(w http.ResponseWriter, r *http.Request) {
+	groups, err := h.taskStore.GetGroups()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"groups": groups})
 }
 
 // CreateTask 创建任务

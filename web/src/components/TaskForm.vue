@@ -24,6 +24,7 @@ const activeTab = ref('basic')
 
 const formData = ref<Partial<Task>>({
   name: '',
+  group: '',
   protocol: 'http',
   target: '',
   method: 'GET',
@@ -113,6 +114,7 @@ watch(() => props.task, (newTask) => {
 function resetForm() {
   formData.value = {
     name: '',
+    group: '',
     protocol: 'http',
     target: '',
     method: 'GET',
@@ -213,6 +215,10 @@ function handleCancel() {
         <el-tab-pane label="基本配置" name="basic">
           <el-form-item label="任务名称" prop="name">
             <el-input v-model="formData.name" placeholder="请输入任务名称" />
+          </el-form-item>
+
+          <el-form-item label="分组">
+            <el-input v-model="formData.group" placeholder="输入分组名称（可选）" />
           </el-form-item>
 
           <el-form-item label="目标地址" prop="target">

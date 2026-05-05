@@ -1,6 +1,7 @@
 export interface Task {
   id: string
   name: string
+  group?: string
   protocol: string
   target: string
   method: string

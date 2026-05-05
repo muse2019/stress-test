@@ -68,6 +68,7 @@ func (s *Server) setupRoutes() {
 	api.HandleFunc("/tasks", s.handler.ListTasks).Methods("GET")
 	api.HandleFunc("/tasks", s.handler.CreateTask).Methods("POST")
 	api.HandleFunc("/tasks", s.handler.DeleteAllTasks).Methods("DELETE")
+	api.HandleFunc("/tasks/groups", s.handler.GetGroups).Methods("GET")
 	api.HandleFunc("/tasks/{id}", s.handler.GetTask).Methods("GET")
 	api.HandleFunc("/tasks/{id}", s.handler.UpdateTask).Methods("PUT")
 	api.HandleFunc("/tasks/{id}", s.handler.DeleteTask).Methods("DELETE")

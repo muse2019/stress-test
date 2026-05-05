@@ -11,6 +11,7 @@ import (
 type Task struct {
 	ID          string            `json:"id"`
 	Name        string            `json:"name"`
+	Group       string            `json:"group,omitempty"`       // 分组名称
 	Protocol    string            `json:"protocol"`
 	Target      string            `json:"target"`
 	Method      string            `json:"method"`

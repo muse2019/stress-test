@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, VideoPlay, VideoPause, Edit, Delete, CopyDocument } from '@element-plus/icons-vue'
+import { Plus, VideoPlay, VideoPause, Edit, Delete, CopyDocument, Folder } from '@element-plus/icons-vue'
 import TaskForm from '@/components/TaskForm.vue'
 import type { Task } from '@/types'
 import { api, withErrorHandling } from '@/api/client'
@@ -10,11 +10,30 @@ const tasks = ref<Task[]>([])
 const loading = ref(false)
 const dialogVisible = ref(false)
 const editingTask = ref<Task | undefined>()
+const groups = ref<string[]>([])
+const selectedGroup = ref<string>('')
+
+// 按分组筛选后的任务
+const filteredTasks = computed(() => {
+  if (!selectedGroup.value) return tasks.value
+  return tasks.value.filter(t => t.group === selectedGroup.value)
+})
+
+// 按分组统计任务数量
+const groupStats = computed(() => {
+  const stats: Record<string, number> = { '全部': tasks.value.length }
+  for (const task of tasks.value) {
+    const group = task.group || '未分组'
+    stats[group] = (stats[group] || 0) + 1
+  }
+  return stats
+})
 
 async function fetchTasks() {
   loading.value = true
   try {
     tasks.value = await api.listTasks()
+    groups.value = await api.getGroups()
   } catch (error) {
     ElMessage.error('获取任务列表失败')
     console.error(error)
@@ -139,22 +158,55 @@ onMounted(() => {
   <div class="task-list">
     <div class="header">
       <h1>任务管理</h1>
-      <el-button type="primary" :icon="Plus" @click="handleCreate">
-        新建任务
-      </el-button>
+      <div class="header-actions">
+        <el-select
+          v-model="selectedGroup"
+          placeholder="全部分组"
+          clearable
+          style="width: 150px; margin-right: 12px;"
+        >
+          <el-option label="全部" value="" />
+          <el-option label="未分组" value="__none__" />
+          <el-option
+            v-for="group in groups"
+            :key="group"
+            :label="`${group} (${groupStats[group] || 0})`"
+            :value="group"
+          />
+        </el-select>
+        <el-button type="primary" :icon="Plus" @click="handleCreate">
+          新建任务
+        </el-button>
+      </div>
     </div>
 
     <el-table
-      :data="tasks"
+      :data="selectedGroup === '__none__' ? tasks.filter(t => !t.group) : filteredTasks"
       v-loading="loading"
       stripe
       style="width: 100%"
     >
-      <el-table-column prop="name" label="任务名称" min-width="150" />
+      <el-table-column prop="name" label="任务名称" min-width="150">
+        <template #default="{ row }">
+          <div class="task-name">
+            <span>{{ row.name }}</span>
+          </div>
+        </template>
+      </el-table-column>
+
+      <el-table-column prop="group" label="分组" width="120" align="center">
+        <template #default="{ row }">
+          <el-tag v-if="row.group" size="small" type="info">
+            <el-icon style="margin-right: 4px;"><Folder /></el-icon>
+            {{ row.group }}
+          </el-tag>
+          <span v-else class="no-group">-</span>
+        </template>
+      </el-table-column>
 
       <el-table-column prop="target" label="目标地址" min-width="200" show-overflow-tooltip />
 
-      <el-table-column prop="method" label="方法" width="100" align="center">
+      <el-table-column prop="method" label="方法" width="80" align="center">
         <template #default="{ row }">
           <el-tag size="small" :type="row.method === 'GET' ? 'success' : row.method === 'POST' ? 'primary' : 'warning'">
             {{ row.method }}
@@ -162,15 +214,15 @@ onMounted(() => {
         </template>
       </el-table-column>
 
-      <el-table-column prop="concurrency" label="并发数" width="100" align="center" />
+      <el-table-column prop="concurrency" label="并发数" width="80" align="center" />
 
-      <el-table-column prop="duration" label="持续时间" width="100" align="center">
+      <el-table-column prop="duration" label="持续时间" width="90" align="center">
         <template #default="{ row }">
           {{ row.duration }}秒
         </template>
       </el-table-column>
 
-      <el-table-column prop="status" label="状态" width="100" align="center">
+      <el-table-column prop="status" label="状态" width="90" align="center">
         <template #default="{ row }">
           <el-tag :type="getStatusType(row.status)">
             {{ getStatusText(row.status) }}
@@ -178,7 +230,7 @@ onMounted(() => {
         </template>
       </el-table-column>
 
-      <el-table-column label="操作" width="280" align="center" fixed="right">
+      <el-table-column label="操作" width="260" align="center" fixed="right">
         <template #default="{ row }">
           <el-button-group>
             <el-button
@@ -255,6 +307,21 @@ onMounted(() => {
   margin: 0;
   font-size: 24px;
   color: var(--el-text-color-primary);
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+}
+
+.task-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.no-group {
+  color: #c0c4cc;
 }
 
 .el-button-group {
