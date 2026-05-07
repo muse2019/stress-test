@@ -3,11 +3,14 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"log"
 	"net/http"
 	"sync"
 	"time"
 
 	"github.com/gorilla/mux"
+	"stress-test/internal/schedule"
 	"stress-test/internal/scheduler"
 	"stress-test/internal/store"
 	"stress-test/pkg/models"
@@ -33,11 +36,12 @@ func writeError(w http.ResponseWriter, message string, code int) {
 
 // Handler API 处理器
 type Handler struct {
-	taskStore   store.TaskStore
-	reportStore store.ReportStore
-	schedulers  map[string]*scheduler.Scheduler
-	wsHub       *WebSocketHub
-	mu          sync.RWMutex
+	taskStore       store.TaskStore
+	reportStore     store.ReportStore
+	schedulers      map[string]*scheduler.Scheduler
+	scheduleManager *schedule.Scheduler
+	wsHub           *WebSocketHub
+	mu              sync.RWMutex
 }
 
 // NewHandler 创建处理器
@@ -48,6 +52,11 @@ func NewHandler(taskStore store.TaskStore, reportStore store.ReportStore, wsHub 
 		schedulers:  make(map[string]*scheduler.Scheduler),
 		wsHub:       wsHub,
 	}
+}
+
+// SetScheduleManager 设置定时调度器
+func (h *Handler) SetScheduleManager(sm *schedule.Scheduler) {
+	h.scheduleManager = sm
 }
 
 // ListTasks 获取任务列表
@@ -122,6 +131,11 @@ func (h *Handler) CreateTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 如果启用了定时任务，添加到调度器
+	if h.scheduleManager != nil && task.Schedule != nil && task.Schedule.Enabled {
+		h.scheduleManager.ScheduleTask(&task)
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(task)
@@ -179,6 +193,15 @@ func (h *Handler) UpdateTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 更新定时调度
+	if h.scheduleManager != nil {
+		if task.Schedule != nil && task.Schedule.Enabled {
+			h.scheduleManager.ScheduleTask(&task)
+		} else {
+			h.scheduleManager.UnscheduleTask(task.ID)
+		}
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(task)
 }
@@ -202,26 +225,49 @@ func (h *Handler) DeleteTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 从定时调度器中移除
+	if h.scheduleManager != nil {
+		h.scheduleManager.UnscheduleTask(id)
+	}
+
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// StartTask 开始压测
+// StartTask 开始压测 (HTTP handler)
 func (h *Handler) StartTask(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	id := vars["id"]
 
+	if err := h.StartTaskByID(id); err != nil {
+		if err.Error() == "task not found" {
+			http.Error(w, err.Error(), http.StatusNotFound)
+		} else if err.Error() == "task is already running" {
+			http.Error(w, err.Error(), http.StatusConflict)
+		} else {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status": "started",
+		"taskId": id,
+	})
+}
+
+// StartTaskByID 通过 ID 启动任务 (供定时调度器调用)
+func (h *Handler) StartTaskByID(id string) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
 	task, err := h.taskStore.Get(id)
 	if err != nil {
-		http.Error(w, "task not found", http.StatusNotFound)
-		return
+		return fmt.Errorf("task not found")
 	}
 
 	if s, ok := h.schedulers[id]; ok && s.IsRunning() {
-		http.Error(w, "task is already running", http.StatusConflict)
-		return
+		return fmt.Errorf("task is already running")
 	}
 
 	// 创建带广播器的调度器
@@ -263,8 +309,7 @@ func (h *Handler) StartTask(w http.ResponseWriter, r *http.Request) {
 		report.GenerateID()
 
 		if err := h.reportStore.Save(report); err != nil {
-			// 记录错误但不影响响应
-			// TODO: 添加日志
+			log.Printf("Failed to save report: %v", err)
 		}
 
 		// 广播完成消息
@@ -274,38 +319,35 @@ func (h *Handler) StartTask(w http.ResponseWriter, r *http.Request) {
 		})
 	}()
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"status": "started",
-		"taskId": id,
-	})
+	return nil
 }
 
-// StopTask 停止压测
+// StopTask 停止压测 (HTTP handler)
 func (h *Handler) StopTask(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	id := vars["id"]
 
+	status := h.StopTaskByID(id)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status": status,
+		"taskId": id,
+	})
+}
+
+// StopTaskByID 通过 ID 停止任务 (供定时调度器调用)
+func (h *Handler) StopTaskByID(id string) string {
 	h.mu.RLock()
 	s, ok := h.schedulers[id]
 	if !ok || !s.IsRunning() {
 		h.mu.RUnlock()
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"status": "not_running",
-			"taskId": id,
-		})
-		return
+		return "not_running"
 	}
 	h.mu.RUnlock()
 
 	s.Stop()
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"status": "stopped",
-		"taskId": id,
-	})
+	return "stopped"
 }
 
 // ListReports 获取报告列表

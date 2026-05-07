@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
+	"stress-test/internal/schedule"
 	"stress-test/internal/store"
 )
 
@@ -128,4 +129,20 @@ func (s *Server) Shutdown(ctx context.Context) error {
 		return s.httpServer.Shutdown(ctx)
 	}
 	return nil
+}
+
+// StartTask 启动任务（实现 schedule.TaskExecutor 接口）
+func (s *Server) StartTask(taskID string) error {
+	return s.handler.StartTaskByID(taskID)
+}
+
+// StopTask 停止任务（实现 schedule.TaskExecutor 接口）
+func (s *Server) StopTask(taskID string) error {
+	s.handler.StopTaskByID(taskID)
+	return nil
+}
+
+// SetScheduleManager 设置定时调度器
+func (s *Server) SetScheduleManager(sm *schedule.Scheduler) {
+	s.handler.SetScheduleManager(sm)
 }

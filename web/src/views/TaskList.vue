@@ -4,7 +4,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, VideoPlay, VideoPause, Edit, Delete, CopyDocument, Folder } from '@element-plus/icons-vue'
 import TaskForm from '@/components/TaskForm.vue'
 import type { Task } from '@/types'
-import { api, withErrorHandling } from '@/api/client'
+import { api } from '@/api/client'
 
 const tasks = ref<Task[]>([])
 const loading = ref(false)

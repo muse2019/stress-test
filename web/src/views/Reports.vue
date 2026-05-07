@@ -10,7 +10,6 @@ import {
   ElTag,
   ElMessage,
   ElEmpty,
-  ElCheckbox,
 } from 'element-plus'
 import { Download, View, Document, Timer, Connection, Sort } from '@element-plus/icons-vue'
 import { api } from '@/api/client'
@@ -177,6 +176,12 @@ const getAvgRTDiffClass = (value: number): string => {
   if (value < 0) return 'diff-positive'
   if (value > 0) return 'diff-negative'
   return 'diff-neutral'
+}
+
+// Calculate success rate
+const calcSuccessRate = (stats: { successCount: number; totalRequests: number }): number => {
+  if (stats.totalRequests === 0) return 0
+  return (stats.successCount / stats.totalRequests) * 100
 }
 
 const canCompare = computed(() => selectedReportIds.value.length === 2)
@@ -478,7 +483,7 @@ onMounted(() => {
 
           <el-table :data="[
             { label: '总请求数', v1: comparison.report1.finalStats.totalRequests, v2: comparison.report2.finalStats.totalRequests, diff: comparison.diff.totalRequests, unit: '' },
-            { label: '成功率', v1: comparison.report1.finalStats.successRate(), v2: comparison.report2.finalStats.successRate(), diff: comparison.diff.successRate, unit: '%' },
+            { label: '成功率', v1: calcSuccessRate(comparison.report1.finalStats), v2: calcSuccessRate(comparison.report2.finalStats), diff: comparison.diff.successRate, unit: '%' },
             { label: 'QPS', v1: comparison.report1.finalStats.qps, v2: comparison.report2.finalStats.qps, diff: comparison.diff.qps, unit: '' },
             { label: '平均响应时间', v1: comparison.report1.finalStats.avgRT, v2: comparison.report2.finalStats.avgRT, diff: comparison.diff.avgRT, unit: 'ms' },
             { label: 'P50', v1: comparison.report1.finalStats.p50, v2: comparison.report2.finalStats.p50, diff: comparison.diff.p50, unit: 'ms' },

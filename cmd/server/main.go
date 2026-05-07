@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"stress-test/internal/api"
+	"stress-test/internal/schedule"
 	"stress-test/internal/store"
 )
 
@@ -38,6 +39,17 @@ func main() {
 	addr := getEnv("SERVER_ADDR", ":8080")
 	server := api.NewServer(addr, taskStore, reportStore)
 
+	// 初始化定时调度器
+	scheduleManager := schedule.NewScheduler(taskStore, server)
+	scheduleManager.Start()
+	server.SetScheduleManager(scheduleManager)
+
+	// 加载已有的定时任务
+	ctx := context.Background()
+	if err := scheduleManager.LoadScheduledTasks(ctx); err != nil {
+		log.Printf("Failed to load scheduled tasks: %v", err)
+	}
+
 	// 设置信号处理
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
@@ -55,6 +67,9 @@ func main() {
 	// 创建关闭超时上下文
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
+
+	// 停止定时调度器
+	scheduleManager.Stop()
 
 	// 优雅关闭
 	if err := server.Shutdown(ctx); err != nil {
